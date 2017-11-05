@@ -1,27 +1,28 @@
+import { isError } from 'lodash'
 export class RPCException extends Error {
   constructor (code, message, error) {
     super()
     this.message = message
     this.code = code
-    this.data = error && error.stack
+    this.data = isError(error) ? error.stack : error
   }
 }
 
 export class ParseErrorException extends RPCException {
-  constructor () {
-    super(-32700, 'Parse Error')
+  constructor (error) {
+    super(-32700, 'Parse Error', error)
   }
 }
 
 export class InvalidRequestException extends RPCException {
-  constructor () {
-    super(-32600, 'Invalid Request')
+  constructor (error) {
+    super(-32600, 'Invalid Request', error)
   }
 }
 
 export class MethodNotFoundException extends RPCException {
-  constructor () {
-    super(-32601, 'Method not found')
+  constructor (error) {
+    super(-32601, 'Method not found', error)
   }
 }
 

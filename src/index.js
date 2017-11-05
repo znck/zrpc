@@ -2,39 +2,48 @@ import * as transport from './transport'
 import channel from './channel'
 import RPC from './rpc'
 import { isFunction, isPlainObject } from 'lodash'
+import { debug } from './util'
 
-export function server (type, options) {
-  return new RPC({
-    channel: channel(type, { server: options || true }),
-    transport
+const log = debug('main')
+
+function create (type, options) {
+  return new RPC({ channel: channel(type, options), transport })
+}
+
+function ZUtil (rpc) {
+  log('create a proxy client')
+
+  return new Proxy({}, {
+    get: (target, key) => {
+      log(`proxy: get ${key} method.`)
+      switch (key) {
+        case 'rpc': return rpc
+        case 'rpcCall': return (method, ...args) => rpc.invoke(method, args)
+        case 'rpcNotify': return (method, ...args) => rpc.notify(method, args)
+        default: return (...args) => rpc.invoke(key, args)
+      }
+    }
   })
 }
 
-export function client (type, options) {
-  if (!options.host) throw new Error('Remote host is required.')
-
-  return new RPC({
-    channel: channel(type, { client: options }),
-    transport
-  })
-}
-
-export default function Z (...args) {
+export function Z (...args) {
   const first = args[0]
   const last = args.slice(-1).pop()
+  
   const options = isPlainObject(last) ? last : {}
-
   const type = options.type
 
   delete options.type
 
   if (isFunction(first)) {
-    const s = server(type, options)
+    const s = create(type, options)
 
     s.register(...args)
 
     return s
   }
 
-  return client(type, options)
+  return ZUtil(create(type, options))
 }
+
+export default Z

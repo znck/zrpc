@@ -1,7 +1,7 @@
 import test from 'ava'
 import { Suite } from 'benchmark'
 
-import { encode, decode } from './dnode'
+import { encode, decode } from './'
 
 test(`'encode' should transform simple object`, t => {
   const args = [1, 'bar', { foo: 'bar' }, [ 'foo', 'bar' ]]

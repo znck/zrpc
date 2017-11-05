@@ -1,15 +1,5 @@
-const Z = require('../lib').default
-process.on('unhandledRejection', r => console.log(r))
+const { Z } = require('../lib')
 
-const app = Z({ host: '127.0.0.1', port: 8000 })
+const app = Z({ host: 'localhost', port: 8081 })
 
-;(async () => {
-  try {
-    console.log(
-      await app.request('hello', ['Rahul', any => any + ' How are you?'])
-    )
-  } catch (e) {
-    console.error('ERROR', e)
-  }
-})()
-
+app.hello('Rahul', any => any + ' How are you?').then(any => console.log(any)).catch(any => console.error(any))
