@@ -10,8 +10,10 @@ test(`'encode' should transform simple object`, t => {
   t.snapshot(dnode)
   t.false(args === dnode.params)
   t.is('foo', dnode.method)
-  t.is(0, Object.keys(dnode.callbacks).length)
-  t.is(0, dnode.links.length)
+  t.falsy(dnode.callbacks)
+  t.falsy(dnode.links)
+
+  t.snapshot(encode('foo', 'bar'))
 })
 
 test(`'encode' should extract callbacks`, t => {
@@ -60,4 +62,8 @@ test(`'decode' should restore cyclic references`, t => {
   t.deepEqual(foo, result[1][0])
   t.deepEqual(foo, result[1][1].a)
   t.is(result[1][0], result[1][1].a)
+})
+
+test(`'decode' throws invalid dnode`, t => {
+  t.throws(() => decode({ callbacks: [] }))
 })

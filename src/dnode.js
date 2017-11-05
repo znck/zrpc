@@ -1,9 +1,9 @@
-import { each } from 'lodash'
+import { each, reduce, isArray, isEmpty } from 'lodash'
 
 function scrub (arg, key, dnode, cid) {
   switch (typeof arg) {
     case 'object':
-      if (!arg) return arg
+      if (arg === null) return arg
       
       const match = dnode.objects.find(
         ({ target }) => target === arg
@@ -21,8 +21,8 @@ function scrub (arg, key, dnode, cid) {
         (item, i) => scrub(item, [...key, i], dnode, cid)
       )
       
-      return Object.entries(arg).reduce(
-        (result, [i, item]) => ({
+      return reduce(arg,
+        (result, item, i) => ({
           [i]: scrub(item, [...key, i], dnode, cid),
           ...result
         }), {}
@@ -38,17 +38,21 @@ function scrub (arg, key, dnode, cid) {
   }
 }
 
+function toArray(any) {
+  return Array.isArray(any) ? any : [any]
+}
+
 export function encode (method, args) {
   const dnode = { method, params: [], callbacks: {}, links: [], objects: [] }
   let cid = 0
   
-  args.forEach((arg, i) => {
-    dnode.params.push(
-      scrub(arg, [i], dnode, () => cid++)
-    )
+  each(toArray(args), (arg, i) => {
+    dnode.params.push(scrub(arg, [i], dnode, () => cid++))
   })
 
-  delete dnode.objects
+  delete dnode.objects // Used to remove cyclic references.
+  if (isEmpty(dnode.callbacks)) delete dnode.callbacks
+  if (isEmpty(dnode.links)) delete dnode.links
 
   return dnode
 }
@@ -81,13 +85,9 @@ export function decode (dnode, handle) {
     if (target) target[last] = value
   }
 
-  Object.entries(dnode.callbacks).forEach(
-    ([callback, key]) => set(key, handle(Number(callback)))
-  )
+  dnode.callbacks && each(dnode.callbacks, (key, callback) => set(key, handle(Number(callback))))
 
-  dnode.links.forEach(
-    link => set(link.to, get(link.from))
-  )
+  dnode.links && each(dnode.links, link => set(link.to, get(link.from)))
 
   return [dnode.method, result]
 }
