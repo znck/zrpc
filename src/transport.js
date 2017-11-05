@@ -1,18 +1,13 @@
 import parse from 'json-parse-stream'
-import { Stream } from 'stream'
+import { Readable } from 'stream'
 
 export async function encode(message) {
   return JSON.stringify(message)
 }
 
 export async function decode(source) {
-  if (source instanceof Stream) {
-    return new Promise((resolve, reject) => {
-      source
-        .pipe(parse())
-        .on('data',result => resolve(result))
-        .error('error', error => reject(error))
-    })
+  if (source instanceof Buffer) {
+    source = source.toString()
   }
 
   return JSON.parse(source)
