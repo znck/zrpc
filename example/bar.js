@@ -1,5 +1,14 @@
 const { Z } = require('../lib')
 
-const app = Z({ host: 'localhost', port: 8081 })
+const app = Z({ host: 'localhost', port: 8080 })
 
-app.hello('Rahul', any => any + ' How are you?').then(any => console.log(any)).catch(any => console.error(any))
+setTimeout(
+  async () => console.log(
+    await app.hello(
+      'Rahul', 
+      async (any, cb) => { 
+        return any + ' How are you? ' + await cb('Cool!')
+      }
+    )
+  ), 1000
+)

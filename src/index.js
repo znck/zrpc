@@ -26,7 +26,7 @@ function ZUtil (rpc) {
   })
 }
 
-export function Z (...args) {
+function Z (...args) {
   const first = args[0]
   const last = args.slice(-1).pop()
   
@@ -46,4 +46,6 @@ export function Z (...args) {
   return ZUtil(create(type, options))
 }
 
-export default Z
+module.exports = exports = Z
+
+exports.Z = Z

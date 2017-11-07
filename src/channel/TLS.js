@@ -1,11 +1,12 @@
 import Channel from './Channel'
-import { Server, Socket } from 'net'
-import { debug } from '../util'
+import { connect, Server } from 'tls'
+import { readFileSync } from 'fs'
+import { debug, toArray } from '../util'
 
-const log = debug('channel:tcp')
+const log = debug('channel:tls')
 
-export default class TCP extends Channel {
-  constructor (options) {
+export default class TLS extends Channel {
+  constructor(options) {
     super()
 
     this.options = options
@@ -14,19 +15,32 @@ export default class TCP extends Channel {
   /** @private */
   async createServer () {
     const events = ['close', 'end', 'error']
+    const host = process.env.ZRPC_HOST || this.options.host || '0.0.0.0'
+    const port = process.env.ZRPC_PORT || this.options.port || 445
+    const options = { ...this.options }
+
+    if (!('ca' in options) && process.env.ZRPC_TLS_CA) options.ca = [
+      readFileSync(process.env.ZRPC_TLS_CA)
+    ]
+    if (!('key' in options) && process.env.ZRPC_TLS_KEY)
+      options.key = readFileSync(process.env.ZRPC_TLS_KEY)
+    if (!('cert' in options) && process.env.ZRPC_TLS_CERT)
+      options.cert = readFileSync(process.env.ZRPC_TLS_CERT)
+
     const server = new Server(socket => {
+      if (!socket.authorized) log('Unauthorised connection to %s:%s', socket.remoteAddress, socket.remotePort)
+
       this.connect(socket)
 
       socket.on('data', data => this.onReceive(socket, data))
-
+      
       events.forEach(event => socket.on(event, (error) => {
         this.disconnect(socket)
         
         if (error instanceof Error) this.onError(error)
       }))
     })
-    const port = this.options.port || process.env.ZRPC_PORT || 135
-    const host = this.options.host || process.env.ZRPC_HOST || '0.0.0.0'
+    server.addContext(host, options)
 
     // start the server.
     log('Start server on %s:%s', host, port)
@@ -37,9 +51,9 @@ export default class TCP extends Channel {
 
   /** @private */
   async createClient () {
-    log('create tcp client')
+    log('create tls client')
     const events = ['close', 'end', 'error']
-    const socket = new Socket()
+    const socket = new TLSSocket()
 
     socket.on('data', data => this.onReceive(socket, data))
 
@@ -62,12 +76,5 @@ export default class TCP extends Channel {
         resolve(socket)
       })
     )
-  }
-
-  /** @private */
-  onSend (socket, message) {
-    if (!socket) throw new Error('No TCP socket found.')
-
-    socket.write(message)
   }
 }

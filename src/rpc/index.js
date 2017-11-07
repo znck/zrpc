@@ -1,13 +1,15 @@
-import { debug, parameters } from '../util'
+import { debug, parameters, toArray } from '../util'
 import * as dnode from '../dnode'
 import * as exceptions from '../exceptions'
 import uuid from 'uuid/v4'
-import { isPlainObject, isFunction, isNumber, isString, each } from 'lodash'
+import split from 'split2'
+import { PassThrough } from 'stream'
+import { isPlainObject, isFunction, isNumber, isString, each, isEmpty } from 'lodash'
 
 const log = debug('rpc')
+const _id = any => any.slice(-4)
 
 const METHODS = Symbol('methods')
-const CALLS = Symbol('calls')
 
 const createProperty = (value) => ({ value, writable: false, enumerable: false })
 
@@ -17,19 +19,17 @@ export default class RPC {
 
     this.channel = channel
     this.transport = transport
+    this.channel.transport = transport
+
+    this.incoming = {}
+    this.outgoing = {}
 
     Object.defineProperty(this, METHODS, createProperty({}))
-    Object.defineProperty(this, CALLS, createProperty({}))
   }
 
   /** @private */
   get methods () {
     return this[METHODS]
-  }
-
-  /** @private */
-  get calls () {
-    return this[CALLS]
   }
 
   /** @private */
@@ -51,7 +51,6 @@ export default class RPC {
     if (!isPlainObject(data)) this.sendError(client, data.id, data.method, new exceptions.InvalidRequestException(data))
 
     if ('method' in data) {
-      log('--- message = %o from %s', data, client)
       this
         .receiveCall(client, data)
         .catch(error => this.sendError(client, data.id, data.method, error))
@@ -64,87 +63,109 @@ export default class RPC {
 
   /** @private */
   async receiveCall (client, data) {
-    const [ method, params ] = dnode.decode(
+    const id = data.id
+    const [ m, params ] = dnode.decode(
       data, 
       method => 
-        (...params) => this.makeCall({ client, method, params, data })
+        (...params) => this.makeCall({
+          id: uuid(),
+          client,
+          method: [method, data.id],
+          params,
+          initiator: data.id
+        })
     )
 
-    const meta = this.calls[data._id || data.id] // for callbacks, base request is in _id.
-    const result = await this.exec(method, params, meta || { data })
+    log(`exec (%s) method = %o params = %o`, _id(id), m, params)
+    
+    const [ method, initiator ] = toArray(m)
+    const result = await this.exec(method, params, this.outgoing[initiator])
 
     this.sendResult(client, data.id, method, result)
   }
 
   /** @private */
-  async receiveResult (client, data) {
-    const call = this.calls[data.id]
+  async sendResult (client, id, method, result) {
+    if (!id) {
+      log(`return (%s) Result = void`, _id(id))
 
-    if (!call) return // No one is expecting a response.
+      return // A notification. No response is expected.
+    }
 
-    log(`Receive result from ${client}. result = %o `, data)
+    log(`return (%s) Result = %o`, _id(id), result)
 
-    call.onResult(data.error, data.result)
+    this.channel.send(client, await this.transport.encode({ id, result }))
+  }
+  
+  /** @private */
+  sendError (client, id, method, error) {
+    log(`return (%s) Error = %o`, _id(id), error)
+    
+    if (!id) return // A notification. No response is expected.
 
-    delete this.calls[data.id]
+    this.channel.send(client, this.transport.encode({ id, error }))
   }
 
   /** @private */
-  exec (name, params, { callbacks }) {
+  async receiveResult (client, data) {
+    const call = this.outgoing[data.id]
+
+    log(`= (%s) Result = %o Error = %o`, _id(data.id), data.result, data.error)
+
+    if (!call) return // No one is expecting a response.
+
+    call.onResult(data.error, data.result, data.id)
+
+    delete this.outgoing[data.id]
+  }
+
+  /** @private */
+  exec (name, params, { callbacks } = { callbacks: {} }) {
     const methods = isNumber(name) ? callbacks : this.methods
 
     if (!(name in methods)) throw new exceptions.MethodNotFoundException(`No method name '${name}' found.`)
 
     const fn = methods[name]
-    const result = fn(...params)
-    log('params %o handler %s --- %o', params, fn.toString(), result)
 
-    return result
+    log('%s', fn.toString())
+
+    return fn(...params)
+  }
+
+  makePayload (id, method, params) {
+    if (id) return { id, ...dnode.encode(method, params) }
+
+    return dnode.encode(method, params)
   }
 
   /** @private */
-  makeCall ({ client, method, params, data }) {
-    const id = uuid()
-    let onResult
-    const promise = new Promise((resolve, reject) => {
-      onResult = (error, result) => {
-        if (error) { reject(error) } else { resolve(result) }
-      }
-    })
-
+  makeCall ({ id, client, method, params, initiator }) {    
+    const payload = this.makePayload(id, method, params)
     const callbacks = {}
-    const payload = { id, jsonrpc: '2.0', ...dnode.encode(method, params) }
-    
-    this.calls[id] = { id, client, method, params, callbacks, onResult: onResult }
-    each(payload.callbacks, (key, cb) => { callbacks[cb] = key.reduce((t, i) => t[i], params) })
-
-    if (data) {
-      payload._id = data.id
+    const meta = {
+      client,
+      method, params,
+      callbacks,
+      onResult: () => {}
     }
 
-    log(`Call %o with %o (c=%s request=%s)`, method, params, data && data.id, id)
+    each(payload.callbacks, (key, cb) => { callbacks[cb] = key.reduce((t, i) => t[i], params) })
 
-    this.channel.send(client, this.transport.encode(payload))
+    if (!isEmpty(callbacks)) payload.id = uuid()
 
-    return promise
-  }
+    this.outgoing[payload.id] = meta
 
-  /** @private */
-  async sendResult (client, id, method, result) {
-    if (!id) return // A notification. No response is expected.
+    log(`call (%s) method = %o params = %o`, _id(payload.id), method, params)
 
-    log(`${id}: Result = %o`, result)
+    return new Promise((resolve, reject) => {
+      this.channel.send(client, this.transport.encode(payload))
+      
+      meta.onResult = (err, res) => {
+        if (err) { reject(err) } else { resolve(res) }
+      }
 
-    this.channel.send(client, await this.transport.encode({ id, jsonrpc: '2.0', result }))
-  }
-  
-  /** @private */
-  sendError (client, id, method, error) {
-    log(`${id}: Failed. Error = %o`, error)
-    
-    if (!id) return // A notification. No response is expected.
-
-    this.channel.send(client, this.transport.encode({ id, jsonrpc: '2.0', error }))
+      if (!payload.id) resolve()
+    })
   }
 
   run (cb) {
@@ -152,11 +173,11 @@ export default class RPC {
   }
 
   notify (method, params) {
-    this.invoke(method, params)
+    return this.makeCall({ method, params })
   }
 
   invoke (method, params) {
-    return this.makeCall({ method, params })
+    return this.makeCall({ id: uuid(), method, params })
   }
 
   register (...args) {

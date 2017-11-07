@@ -6,9 +6,16 @@ export async function encode(message) {
 }
 
 export async function decode(source) {
-  if (isBuffer(source)) {
-    source = source.toString()
-  }
+  try {
+    if (isBuffer(source)) {
+      source = source.toString()
+    }
+  
+    return JSON.parse(source)
+  } catch (e) {
+    console.log(source)
+    console.error(e)
 
-  return JSON.parse(source)
+    throw e
+  }
 }

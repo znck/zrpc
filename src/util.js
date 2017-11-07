@@ -1,8 +1,12 @@
 import _debug from 'debug'
 import { isFunction } from 'lodash'
 
+export function toArray(any) {
+  return Array.isArray(any) ? any : [any]
+}
+
 export function debug (name) {
-  return _debug(`zrpc::${name}`)
+  return process.env.NODE_ENV === 'production' ? () => {} : _debug(`zrpc::${name}`)
 }
 
 const COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg
