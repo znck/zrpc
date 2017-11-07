@@ -29,9 +29,9 @@ test(`'receive' & 'send' workflow`, t => {
   channel.register((...params) => { [id, message] = params })
   channel.connect(incoming)
 
-  channel.onReceive(incoming, 'message')
+  channel.onReceive(incoming, '{}\n')
 
-  t.is('message', message)
+  t.is('{}', message)
 
   let sent
 
@@ -53,17 +53,17 @@ test.cb(`'createClient' workflow`, t => {
   const channel = new Channel()
   const outgoing = { name: 'out' }
 
-  channel.createClient = () => {
-    channel.connect(outgoing)
+  channel.createClient = async () => {
+    channel.connect(outgoing, false)
 
     return outgoing
   }
 
   channel.onSend = (client, message) => {
     t.is(outgoing, client)
-    t.is('foo', message)
+    t.is('foo\n', message)
     t.end()
   }
 
-  channel.send('foo')
+  channel.send(null, 'foo')
 })

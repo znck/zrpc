@@ -7,7 +7,7 @@ import { PassThrough } from 'stream'
 import { isPlainObject, isFunction, isNumber, isString, each, isEmpty } from 'lodash'
 
 const log = debug('rpc')
-const _id = any => any.slice(-4)
+const _id = any => isString(any) && any.slice(-4)
 
 const METHODS = Symbol('methods')
 

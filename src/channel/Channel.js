@@ -122,12 +122,8 @@ export default class Channel {
 
   /** @private */
   async send$ (client, message) {
-    client = await client
-    message = await message
-    
-    log(client[ID] + ' << %s', message)
-    
-    this.onSend(client, message + '\n')
+    this.onSend(await client, (await message) + '\n')
+    log(client[ID] + ' >> %s', message)
   }
 
   send (id, message) {
